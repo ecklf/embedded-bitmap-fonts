@@ -74,17 +74,18 @@
 
 use core::num::NonZeroU8;
 use embedded_graphics::{
+    Pixel,
     draw_target::DrawTarget,
     geometry::{Dimensions, OriginDimensions, Point, Size},
     image::{ImageDrawable, ImageRaw},
     mono_font::mapping::GlyphMapping,
     pixelcolor::BinaryColor,
+    prelude::PixelColor,
     primitives::Rectangle,
     text::{
-        renderer::{TextMetrics, TextRenderer},
         Baseline,
+        renderer::{TextMetrics, TextRenderer},
     },
-    Pixel,
 };
 
 // Font modules - conditionally compiled based on features
@@ -267,15 +268,15 @@ impl<'a> BitmapFont<'a> {
     }
 
     /// Draw a single glyph at the specified position.
-    pub fn draw_glyph<D>(
+    pub fn draw_glyph<D, C: PixelColor>(
         &self,
         idx: u32,
         target: &mut D,
-        color: BinaryColor,
+        color: C,
         pos: Point,
     ) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = BinaryColor>,
+        D: DrawTarget<Color = C>,
     {
         let bitmap_size = self.bitmap.size();
         let chars_per_row = bitmap_size.width / self.size.width;
@@ -378,23 +379,23 @@ impl<'a> BitmapFont<'a> {
 /// ```
 #[derive(Clone, Copy)]
 #[non_exhaustive]
-pub struct TextStyle<'a> {
+pub struct TextStyle<'a, C> {
     /// The font to use for rendering.
     pub font: &'a BitmapFont<'a>,
     /// The foreground color for text pixels.
-    pub color: BinaryColor,
+    pub color: C,
 }
 
-impl<'a> TextStyle<'a> {
+impl<'a, C> TextStyle<'a, C> {
     /// Creates a new text style with the given font and color.
     #[inline]
-    pub const fn new(font: &'a BitmapFont<'a>, color: BinaryColor) -> Self {
+    pub const fn new(font: &'a BitmapFont<'a>, color: C) -> Self {
         Self { font, color }
     }
 }
 
-impl TextRenderer for TextStyle<'_> {
-    type Color = BinaryColor;
+impl<C: PixelColor> TextRenderer for TextStyle<'_, C> {
+    type Color = C;
 
     fn draw_string<D>(
         &self,
@@ -446,16 +447,16 @@ impl TextRenderer for TextStyle<'_> {
 ///
 /// This wraps another draw target and multiplies each pixel by the specified
 /// factor, drawing NxN blocks for each source pixel.
-struct PixelMultiplyDrawTarget<'a, D: DrawTarget<Color = BinaryColor>> {
+struct PixelMultiplyDrawTarget<'a, D: DrawTarget<Color = C>, C: PixelColor> {
     target: &'a mut D,
-    color: BinaryColor,
+    color: C,
     offset: Point,
     pixels: NonZeroU8,
 }
 
-impl<D> Dimensions for PixelMultiplyDrawTarget<'_, D>
+impl<D, C: PixelColor> Dimensions for PixelMultiplyDrawTarget<'_, D, C>
 where
-    D: DrawTarget<Color = BinaryColor>,
+    D: DrawTarget<Color = C>,
 {
     fn bounding_box(&self) -> Rectangle {
         let mut bb = self.target.bounding_box();
@@ -466,9 +467,9 @@ where
     }
 }
 
-impl<D> DrawTarget for PixelMultiplyDrawTarget<'_, D>
+impl<D, C: PixelColor> DrawTarget for PixelMultiplyDrawTarget<'_, D, C>
 where
-    D: DrawTarget<Color = BinaryColor>,
+    D: DrawTarget<Color = C>,
 {
     type Color = BinaryColor;
     type Error = D::Error;
@@ -494,16 +495,16 @@ where
 }
 
 /// Iterator that expands a single pixel into an NxN block.
-struct PixelMultiplyIterator {
-    color: BinaryColor,
+struct PixelMultiplyIterator<C> {
+    color: C,
     base_pos: Point,
     x: u8,
     y: u8,
     multiplier: u8,
 }
 
-impl PixelMultiplyIterator {
-    fn new(pixel: Pixel<BinaryColor>, multiplier: u8) -> Self {
+impl<C: PixelColor> PixelMultiplyIterator<C> {
+    fn new(pixel: Pixel<C>, multiplier: u8) -> Self {
         Self {
             color: pixel.1,
             base_pos: pixel.0 * multiplier as i32,
@@ -514,10 +515,10 @@ impl PixelMultiplyIterator {
     }
 }
 
-impl Iterator for PixelMultiplyIterator {
-    type Item = Pixel<BinaryColor>;
+impl<C: PixelColor> Iterator for PixelMultiplyIterator<C> {
+    type Item = Pixel<C>;
 
-    fn next(&mut self) -> Option<Pixel<BinaryColor>> {
+    fn next(&mut self) -> Option<Pixel<C>> {
         if self.y >= self.multiplier {
             return None;
         }
@@ -546,7 +547,7 @@ impl Iterator for PixelMultiplyIterator {
     }
 }
 
-impl ExactSizeIterator for PixelMultiplyIterator {}
+impl<C: PixelColor> ExactSizeIterator for PixelMultiplyIterator<C> {}
 
 #[cfg(test)]
 mod tests {

@@ -24,8 +24,8 @@ struct Mapping;
 impl GlyphMapping for Mapping {
     fn index(&self, c: char) -> usize {
         match c {
-            ' ' ..= '~' => c as usize - ' ' as usize,
-            '\u{00A1}' ..= '\u{00FF}' => c as usize - '\u{00A1}' as usize + 95,
+            ' '..='~' => c as usize - ' ' as usize,
+            '\u{00A1}'..='\u{00FF}' => c as usize - '\u{00A1}' as usize + 95,
             _ => '?' as usize - ' ' as usize, // replacement char
         }
     }
@@ -364,4 +364,3 @@ static FONT_7x15_DATA: [u8; 2520] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x03, 0xC0, 0x0F, 0x00, 0x00, 
 ];
-

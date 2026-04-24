@@ -3,7 +3,7 @@
 //! This tool processes BDF font files and generates Rust source code containing
 //! the font bitmap data and metadata.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bdf2::Font;
 use bitvec::prelude::*;
 use clap::Parser;
@@ -46,11 +46,11 @@ struct Args {
     /// Font family name (e.g., "tamzen", "cherry")
     #[arg(short, long)]
     family: String,
-    
+
     /// Filter pattern for BDF files (e.g., "Tamzen" to only include Tamzen*.bdf)
     #[arg(short = 'P', long)]
     pattern: Option<String>,
-    
+
     /// Exclude pattern for BDF files (e.g., "Powerline" to exclude Powerline variants)
     #[arg(short = 'X', long)]
     exclude: Option<String>,
@@ -94,21 +94,21 @@ fn main() -> Result<()> {
                 return false;
             }
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            
+
             // Apply include pattern
             if let Some(ref pattern) = args.pattern {
                 if !filename.contains(pattern) {
                     return false;
                 }
             }
-            
+
             // Apply exclude pattern
             if let Some(ref exclude) = args.exclude {
                 if filename.contains(exclude) {
                     return false;
                 }
             }
-            
+
             true
         })
         .map(|e| e.path().to_path_buf())
@@ -154,13 +154,11 @@ fn main() -> Result<()> {
             deduped_fonts.push(font);
         }
     }
-    
+
     info!("After deduplication: {} unique fonts", deduped_fonts.len());
 
     // Sort fonts by size and style
-    deduped_fonts.sort_by(|a, b| {
-        (a.width, a.height, a.bold).cmp(&(b.width, b.height, b.bold))
-    });
+    deduped_fonts.sort_by(|a, b| (a.width, a.height, a.bold).cmp(&(b.width, b.height, b.bold)));
 
     // Generate output
     fs::create_dir_all(&args.output)?;
@@ -173,25 +171,23 @@ fn main() -> Result<()> {
 }
 
 fn process_bdf_file(path: &Path) -> Result<ProcessedFont> {
-    let filename = path.file_stem()
+    let filename = path
+        .file_stem()
         .and_then(|s| s.to_str())
         .context("Invalid filename")?;
 
     // Read and parse BDF file
     let content = fs::read(path)?;
-    let font = bdf2::read(&content[..])
-        .map_err(|e| anyhow::anyhow!("BDF parse error: {:?}", e))?;
+    let font = bdf2::read(&content[..]).map_err(|e| anyhow::anyhow!("BDF parse error: {:?}", e))?;
 
     // Get font metrics from the font itself
     let bounds = font.bounds();
     let width = bounds.width as usize;
     let height = bounds.height as usize;
-    
+
     // Determine if bold from filename
     let lower = filename.to_lowercase();
-    let bold = lower.ends_with('b') 
-        || lower.contains("-b") 
-        || lower.contains("bold");
+    let bold = lower.ends_with('b') || lower.contains("-b") || lower.contains("bold");
 
     // Calculate total characters
     let char_count: usize = CHAR_RANGES
@@ -262,13 +258,7 @@ fn build_bitmap(
 
     for (start, end) in CHAR_RANGES {
         for ch in *start..=*end {
-            add_glyph_to_lines(
-                &mut current_row_lines,
-                font,
-                ch,
-                glyph_width,
-                glyph_height,
-            );
+            add_glyph_to_lines(&mut current_row_lines, font, ch, glyph_width, glyph_height);
 
             chars_in_row += 1;
             if chars_in_row >= per_line {
@@ -320,7 +310,7 @@ fn add_glyph_to_lines(
 ) {
     let glyph = font.glyphs().get(&ch);
     let font_bounds = font.bounds();
-    
+
     for y in 0..glyph_height {
         for x in 0..glyph_width {
             let pixel = if let Some(g) = glyph {
@@ -333,22 +323,27 @@ fn add_glyph_to_lines(
     }
 }
 
-fn get_glyph_pixel(glyph: &bdf2::Glyph, x: usize, y: usize, font_bounds: &bdf2::BoundingBox) -> bool {
+fn get_glyph_pixel(
+    glyph: &bdf2::Glyph,
+    x: usize,
+    y: usize,
+    font_bounds: &bdf2::BoundingBox,
+) -> bool {
     let glyph_bounds = glyph.bounds();
-    
+
     // Calculate the offset within the font's coordinate system
     // BDF glyphs can have different bounding boxes from the font
     let x_offset = (glyph_bounds.x - font_bounds.x) as i32;
-    let y_offset = (font_bounds.height as i32 - glyph_bounds.height as i32) 
-                   - (glyph_bounds.y - font_bounds.y) as i32;
-    
+    let y_offset = (font_bounds.height as i32 - glyph_bounds.height as i32)
+        - (glyph_bounds.y - font_bounds.y) as i32;
+
     let gx = x as i32 - x_offset;
     let gy = y as i32 - y_offset;
-    
+
     if gx < 0 || gy < 0 || gx >= glyph_bounds.width as i32 || gy >= glyph_bounds.height as i32 {
         return false;
     }
-    
+
     glyph.get(gx as u32, gy as u32)
 }
 
@@ -363,27 +358,38 @@ fn generate_rust_code(fonts: &[ProcessedFont], family: &str, output_path: &Path)
     writeln!(file)?;
     writeln!(file, "//! {} font family", family)?;
     writeln!(file, "//!")?;
-    writeln!(file, "//! This module contains bitmap fonts from the {} family.", family)?;
+    writeln!(
+        file,
+        "//! This module contains bitmap fonts from the {} family.",
+        family
+    )?;
     writeln!(file, "//!")?;
     writeln!(file, "//! ## Available Fonts")?;
     writeln!(file, "//!")?;
     writeln!(file, "//! | Font | Size | Style | Flash Size |")?;
     writeln!(file, "//! |------|------|-------|------------|")?;
-    
+
     for font in fonts {
         let style = if font.bold { "Bold" } else { "Regular" };
         let const_name = make_const_name(font);
         writeln!(
             file,
             "//! | [`{}`] | {}x{} | {} | {} bytes |",
-            const_name, font.width, font.height, style, font.bitmap.len()
+            const_name,
+            font.width,
+            font.height,
+            style,
+            font.bitmap.len()
         )?;
     }
-    
+
     writeln!(file)?;
     writeln!(file, "use crate::BitmapFont;")?;
     writeln!(file, "use core::num::NonZeroU8;")?;
-    writeln!(file, "use embedded_graphics::{{geometry::Size, image::ImageRaw, mono_font::mapping::GlyphMapping}};")?;
+    writeln!(
+        file,
+        "use embedded_graphics::{{geometry::Size, image::ImageRaw, mono_font::mapping::GlyphMapping}};"
+    )?;
     writeln!(file)?;
 
     // Custom glyph mapping struct
@@ -393,33 +399,41 @@ fn generate_rust_code(fonts: &[ProcessedFont], family: &str, output_path: &Path)
     writeln!(file, "impl GlyphMapping for Mapping {{")?;
     writeln!(file, "    fn index(&self, c: char) -> usize {{")?;
     writeln!(file, "        match c {{")?;
-    
+
     let mut offset = 0usize;
     for (start, end) in CHAR_RANGES {
         if offset == 0 {
             writeln!(
                 file,
                 "            '{}' ..= '{}' => c as usize - '{}' as usize,",
-                escape_char(*start), escape_char(*end), escape_char(*start)
+                escape_char(*start),
+                escape_char(*end),
+                escape_char(*start)
             )?;
         } else {
             writeln!(
                 file,
                 "            '{}' ..= '{}' => c as usize - '{}' as usize + {},",
-                escape_char(*start), escape_char(*end), escape_char(*start), offset
+                escape_char(*start),
+                escape_char(*end),
+                escape_char(*start),
+                offset
             )?;
         }
         offset += *end as usize - *start as usize + 1;
     }
-    
-    writeln!(file, "            _ => '?' as usize - ' ' as usize, // replacement char")?;
+
+    writeln!(
+        file,
+        "            _ => '?' as usize - ' ' as usize, // replacement char"
+    )?;
     writeln!(file, "        }}")?;
     writeln!(file, "    }}")?;
     writeln!(file, "}}")?;
     writeln!(file)?;
     writeln!(file, "static GLYPH_MAPPING: Mapping = Mapping;")?;
     writeln!(file)?;
-    
+
     // NonZeroU8 constant
     writeln!(file, "const ONE: NonZeroU8 = match NonZeroU8::new(1) {{")?;
     writeln!(file, "    Some(one) => one,")?;
@@ -456,19 +470,41 @@ fn generate_font_constant(file: &mut File, font: &ProcessedFont) -> Result<()> {
     writeln!(file, "///")?;
     writeln!(file, "/// Flash size: {} bytes", font.bitmap.len())?;
     writeln!(file, "///")?;
-    writeln!(file, "/// Use `.pixel_double()` to get a {}x{} version.", font.width * 2, font.height * 2)?;
-    writeln!(file, "pub static {}: BitmapFont<'static> = BitmapFont {{", const_name)?;
-    writeln!(file, "    bitmap: ImageRaw::new(&{}_DATA, {}),", const_name, font.img_width)?;
+    writeln!(
+        file,
+        "/// Use `.pixel_double()` to get a {}x{} version.",
+        font.width * 2,
+        font.height * 2
+    )?;
+    writeln!(
+        file,
+        "pub static {}: BitmapFont<'static> = BitmapFont {{",
+        const_name
+    )?;
+    writeln!(
+        file,
+        "    bitmap: ImageRaw::new(&{}_DATA, {}),",
+        const_name, font.img_width
+    )?;
     writeln!(file, "    glyph_mapping: &GLYPH_MAPPING,")?;
-    writeln!(file, "    size: Size::new({}, {}),", font.width, font.height)?;
+    writeln!(
+        file,
+        "    size: Size::new({}, {}),",
+        font.width, font.height
+    )?;
     writeln!(file, "    pixels: ONE,")?;
     writeln!(file, "}};")?;
     writeln!(file)?;
 
     // Bitmap data
     writeln!(file, "#[rustfmt::skip]")?;
-    writeln!(file, "static {}_DATA: [u8; {}] = [", const_name, font.bitmap.len())?;
-    
+    writeln!(
+        file,
+        "static {}_DATA: [u8; {}] = [",
+        const_name,
+        font.bitmap.len()
+    )?;
+
     for chunk in font.bitmap.chunks(16) {
         write!(file, "    ")?;
         for byte in chunk {
@@ -476,7 +512,7 @@ fn generate_font_constant(file: &mut File, font: &ProcessedFont) -> Result<()> {
         }
         writeln!(file)?;
     }
-    
+
     writeln!(file, "];")?;
     writeln!(file)?;
 
